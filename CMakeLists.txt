@@ -1,13 +1,13 @@
 cmake_minimum_required(VERSION 3.22)
 
 # # # # # # # # # # # # # # # # # # # # # # #
-#     Project name and version              #
+#     Project name, version and settings    #
 # # # # # # # # # # # # # # # # # # # # # # #
 project(pigaco LANGUAGES C)
 
 set(PIGACO_MAJOR_VERSION 1)
-set(PIGACO_MINOR_VERSION 0)
-set(PIGACO_PATCH_VERSION 0)
+set(PIGACO_MINOR_VERSION 1)
+set(PIGACO_PATCH_VERSION 2)
 
 set(PIGACO_VERSION
     ${PIGACO_MAJOR_VERSION}.${PIGACO_MINOR_VERSION}.${PIGACO_PATCH_VERSION})
@@ -29,23 +29,8 @@ file(CREATE_LINK
 )
 
 # # # # # # # # # # # # # # # # # # # # # # #
-#     ...                                   #
+#      Targets                              #
 # # # # # # # # # # # # # # # # # # # # # # #
-# configure_file(
-#   ${PROJECT_SOURCE_DIR}/version.h.in
-#   ${PROJECT_SOURCE_DIR}/version.h
-#   @ONLY
-# )
-
-# list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/modules)
-
-# include(FindPackages)
-
-# # # # # # # # # # # # # # # # # # # # # # #
-#     Subdirectories                        #
-# # # # # # # # # # # # # # # # # # # # # # #
-# add_subdirectory(src)
-
 add_executable(${PROJECT_NAME} main.c)
 
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
