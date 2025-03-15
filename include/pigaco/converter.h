@@ -1,3 +1,7 @@
+/* * * * * * * * * * * * * * * * * * *
+ *  start of header file
+ */
+
 #ifndef PIGACO_CONVERTER_H
 #define PIGACO_CONVERTER_H
 
@@ -43,6 +47,10 @@ typedef struct {
 extern "C" {
 #endif // __cplusplus
 
+#ifdef __cplusplus
+namespace pg {
+#endif // __cplusplus, namespace begin
+
 PGDEF void apply__contrast(unsigned char *gray, int width, int height,
                            float contrast);
 
@@ -57,13 +65,17 @@ PGDEF const pgu8 pg_version();
 
 #ifdef __cplusplus
 }
+#endif // __cplusplus, namespace end
+
+#ifdef __cplusplus
+}
 #endif // __cplusplus
 
 #endif // PIGACO_CONVERTER_H
 
 /*
  * end of header file
- * * * * * * * * * * * * * * * * * */
+ * * * * * * * * * * * * * * * * * * */
 
 #ifdef PG_CONVERTER_IMPLEMENTATION
 
@@ -87,6 +99,10 @@ PGDEF const pgu8 pg_version();
 #define pg_inline
 #endif
 
+#ifdef __cplusplus
+using namespace pg;
+#endif // __cplusplus
+
 PGDEF void convert_image_to_ascii(const char *filename, int scale,
                                   float aspect_ratio) {
   struct Image *image = (struct Image *)PG_MALLOC(sizeof(struct Image));
@@ -97,14 +113,18 @@ PGDEF void convert_image_to_ascii(const char *filename, int scale,
   if (!image) {
     fwprintf(stderr, L"%s\n", stbi_failure_reason());
 
+    PG_FREE(image);
+
     return;
   }
 
   unsigned char *gray = PG_MALLOC(image->width * image->height);
   if (!gray) {
+    wprintf(L"Error allocate memory for gray.\n");
+
     stbi_image_free(image->data);
 
-    wprintf(L"Error allocate memory for gray.\n");
+    PG_FREE(image);
 
     return;
   }
@@ -128,8 +148,6 @@ PGDEF void convert_image_to_ascii(const char *filename, int scale,
 
   floyd__steinberg_dither(gray, image->width, image->height);
 
-  /* int scale = 8; */
-  /* float aspect_ratio = 0.5f; */
   int vscale = (int)(scale / aspect_ratio);
 
   if (vscale < 1)
@@ -225,8 +243,8 @@ PGDEF void convert_image_to_ascii(const char *filename, int scale,
   PG_FREE(image);
 }
 
-PGDEF void apply__contrast(unsigned char *gray, int width, int height,
-                           float contrast) {
+PGDEF pg_inline void apply__contrast(unsigned char *gray, int width, int height,
+                                     float contrast) {
   int size = width * height;
   for (int i = 0; i < size; i++) {
     float val = gray[i];
@@ -240,7 +258,8 @@ PGDEF void apply__contrast(unsigned char *gray, int width, int height,
   }
 }
 
-PGDEF void floyd__steinberg_dither(unsigned char *gray, int width, int height) {
+PGDEF pg_inline void floyd__steinberg_dither(unsigned char *gray, int width,
+                                             int height) {
   for (int y = 0; y < height; y++) {
     for (int x = 0; x < width; x++) {
       int idx = y * width + x;
@@ -319,6 +338,6 @@ PGDEF void *process__rows(void *arg) {
   return NULL;
 }
 
-PGDEF const pgu8 pg_version() { return PG_VERSION; }
+PGDEF pg_inline const pgu8 pg_version() { return PG_VERSION; }
 
 #endif // PG_CONVERTER_IMPLEMENTATION
