@@ -15,6 +15,12 @@
 #endif
 #endif
 
+#ifdef __cplusplus
+#define pg_inline inline
+#else
+#define pg_inline
+#endif
+
 #define PG_VERSION 1
 
 #define ASCII_CHARS L" .,:;irsXA253hMHGS#9B&@"
@@ -51,17 +57,18 @@ extern "C" {
 namespace pg {
 #endif // __cplusplus, namespace begin
 
-PGDEF void apply__contrast(unsigned char *gray, int width, int height,
-                           float contrast);
+PGDEF pg_inline void apply__contrast(unsigned char *gray, int width, int height,
+                                     float contrast);
 
-PGDEF void floyd__steinberg_dither(unsigned char *gray, int width, int height);
+PGDEF pg_inline void floyd__steinberg_dither(unsigned char *gray, int width,
+                                             int height);
 
 PGDEF void *process__rows(void *arg);
 
 PGDEF void convert_image_to_ascii(const char *filename, int scale,
                                   float aspect_ratio);
 
-PGDEF const pgu8 pg_version();
+PGDEF pg_inline const pgu8 pg_version();
 
 #ifdef __cplusplus
 }
@@ -85,7 +92,6 @@ PGDEF const pgu8 pg_version();
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <wchar.h>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb/stb_image.h"
@@ -94,10 +100,8 @@ PGDEF const pgu8 pg_version();
 #define PG_FREE(ptr) free(ptr)
 
 #ifdef __cplusplus
-#define pg_inline inline
-#else
-#define pg_inline
-#endif
+extern "C" {
+#endif // __cplusplus
 
 #ifdef __cplusplus
 using namespace pg;
@@ -118,7 +122,8 @@ PGDEF void convert_image_to_ascii(const char *filename, int scale,
     return;
   }
 
-  unsigned char *gray = PG_MALLOC(image->width * image->height);
+  unsigned char *gray =
+      (unsigned char *)PG_MALLOC(image->width * image->height);
   if (!gray) {
     wprintf(L"Error allocate memory for gray.\n");
 
@@ -166,7 +171,7 @@ PGDEF void convert_image_to_ascii(const char *filename, int scale,
 #endif
   wprintf(L"Using %d thread(s)\n", num_threads);
 
-  wchar_t **output = PG_MALLOC(out_rows * sizeof(wchar_t *));
+  wchar_t **output = (wchar_t **)PG_MALLOC(out_rows * sizeof(wchar_t *));
   if (!output) {
     wprintf(L"Error allocate memory for output.\n");
 
@@ -181,8 +186,9 @@ PGDEF void convert_image_to_ascii(const char *filename, int scale,
 
   memset(output, 0, out_rows * sizeof(wchar_t *));
 
-  pthread_t *threads = PG_MALLOC(num_threads * sizeof(pthread_t));
-  ThreadData *thread_data = PG_MALLOC(num_threads * sizeof(ThreadData));
+  pthread_t *threads = (pthread_t *)PG_MALLOC(num_threads * sizeof(pthread_t));
+  ThreadData *thread_data =
+      (ThreadData *)PG_MALLOC(num_threads * sizeof(ThreadData));
   if (!threads || !thread_data) {
     fwprintf(stderr, L"Error allocate memory for threads.\n");
 
@@ -243,8 +249,8 @@ PGDEF void convert_image_to_ascii(const char *filename, int scale,
   PG_FREE(image);
 }
 
-PGDEF pg_inline void apply__contrast(unsigned char *gray, int width, int height,
-                                     float contrast) {
+PGDEF void apply__contrast(unsigned char *gray, int width, int height,
+                           float contrast) {
   int size = width * height;
   for (int i = 0; i < size; i++) {
     float val = gray[i];
@@ -258,8 +264,7 @@ PGDEF pg_inline void apply__contrast(unsigned char *gray, int width, int height,
   }
 }
 
-PGDEF pg_inline void floyd__steinberg_dither(unsigned char *gray, int width,
-                                             int height) {
+PGDEF void floyd__steinberg_dither(unsigned char *gray, int width, int height) {
   for (int y = 0; y < height; y++) {
     for (int x = 0; x < width; x++) {
       int idx = y * width + x;
@@ -301,7 +306,7 @@ PGDEF void *process__rows(void *arg) {
     else
       buffer_size = data->out_cols + 1;
 
-    wchar_t *line = PG_MALLOC(buffer_size * sizeof(wchar_t));
+    wchar_t *line = (wchar_t *)PG_MALLOC(buffer_size * sizeof(wchar_t));
     if (!line) {
       fwprintf(stderr, L"Error allocate memory for line %d\n", out_y);
       continue;
@@ -338,6 +343,10 @@ PGDEF void *process__rows(void *arg) {
   return NULL;
 }
 
-PGDEF pg_inline const pgu8 pg_version() { return PG_VERSION; }
+PGDEF const pgu8 pg_version() { return PG_VERSION; }
+
+#ifdef __cplusplus
+}
+#endif // __cplusplus
 
 #endif // PG_CONVERTER_IMPLEMENTATION

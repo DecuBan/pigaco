@@ -3,11 +3,11 @@ cmake_minimum_required(VERSION 3.22)
 # # # # # # # # # # # # # # # # # # # # # # #
 #     Project name, version and settings    #
 # # # # # # # # # # # # # # # # # # # # # # #
-project(pigaco LANGUAGES C)
+project(pigaco LANGUAGES C CXX)
 
 set(PIGACO_MAJOR_VERSION 1)
 set(PIGACO_MINOR_VERSION 1)
-set(PIGACO_PATCH_VERSION 2)
+set(PIGACO_PATCH_VERSION 5)
 
 set(PIGACO_VERSION
     ${PIGACO_MAJOR_VERSION}.${PIGACO_MINOR_VERSION}.${PIGACO_PATCH_VERSION})
@@ -31,8 +31,13 @@ file(CREATE_LINK
 # # # # # # # # # # # # # # # # # # # # # # #
 #      Targets                              #
 # # # # # # # # # # # # # # # # # # # # # # #
-add_executable(${PROJECT_NAME} main.c)
+add_executable(${PROJECT_NAME}c main.c)
+add_executable(${PROJECT_NAME}cxx main.cc)
 
-target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(${PROJECT_NAME}c PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-target_link_libraries(${PROJECT_NAME} PUBLIC m pthread)
+target_link_libraries(${PROJECT_NAME}c PUBLIC m pthread)
+
+target_include_directories(${PROJECT_NAME}cxx PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+target_link_libraries(${PROJECT_NAME}cxx PUBLIC m pthread)
