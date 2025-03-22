@@ -26,13 +26,21 @@
 #define ASCII_CHARS L" .,:;irsXA253hMHGS#9B&@"
 #define ASCII_CHARS_LEN ((sizeof(ASCII_CHARS) / sizeof(wchar_t)) - 1)
 
-typedef unsigned int pgu8;
+#ifdef PG_CONVERTER_TYPES
+typedef unsigned char pgu8;
+typedef unsigned int pgu32;
+#else
+#include <stdint.h>
+
+typedef uint8_t pgu8;
+typedef uint32_t pgu32;
+#endif
 
 struct Image {
   int width;
   int height;
   int channels;
-  unsigned char *data;
+  pgu8 *data;
 };
 
 typedef struct {
@@ -44,8 +52,8 @@ typedef struct {
   int scale;
   int vscale;
   int use_color;
-  const unsigned char *image;
-  const unsigned char *gray;
+  volatile const pgu8 *image;
+  volatile const pgu8 *gray;
   wchar_t **out;
 } ThreadData;
 
@@ -57,18 +65,17 @@ extern "C" {
 namespace pg {
 #endif // __cplusplus, namespace begin
 
-PGDEF pg_inline void apply__contrast(unsigned char *gray, int width, int height,
+PGDEF pg_inline void apply__contrast(pgu8 *gray, int width, int height,
                                      float contrast);
 
-PGDEF pg_inline void floyd__steinberg_dither(unsigned char *gray, int width,
-                                             int height);
+PGDEF pg_inline void floyd__steinberg_dither(pgu8 *gray, int width, int height);
 
 PGDEF void *process__rows(void *arg);
 
 PGDEF void convert_image_to_ascii(const char *filename, int scale,
                                   float aspect_ratio);
 
-PGDEF pg_inline const pgu8 pg_version();
+PGDEF pg_inline const pgu32 pg_version();
 
 #ifdef __cplusplus
 }
@@ -92,6 +99,8 @@ PGDEF pg_inline const pgu8 pg_version();
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+#define PG_CONVERTER_TYPES
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb/stb_image.h"
@@ -122,8 +131,7 @@ PGDEF void convert_image_to_ascii(const char *filename, int scale,
     return;
   }
 
-  unsigned char *gray =
-      (unsigned char *)PG_MALLOC(image->width * image->height);
+  pgu8 *gray = (pgu8 *)PG_MALLOC(image->width * image->height);
   if (!gray) {
     wprintf(L"Error allocate memory for gray.\n");
 
@@ -134,85 +142,39 @@ PGDEF void convert_image_to_ascii(const char *filename, int scale,
     return;
   }
 
-  for (int y = 0; y < image->height; y++) {
-    for (int x = 0; x < image->width; x++) {
-      int idx = (y * image->width + x) * 3;
+  for (int i = 0; i < image->width * image->height * 3; i += 3)
+    gray[i / 3] = (pgu8)(0.299f * image->data[i] + 0.587f * image->data[i + 1] +
+                         0.114f * image->data[i + 2]);
 
-      unsigned char r = image->data[idx];
-      unsigned char g = image->data[idx + 1];
-      unsigned char b = image->data[idx + 2];
-
-      float lum = 0.299f * r + 0.587f * g + 0.114f * b;
-
-      gray[y * image->width + x] = (unsigned char)lum;
-    }
-  }
-
-  float contrast_factor = 1.1f;
-  apply__contrast(gray, image->width, image->height, contrast_factor);
+  apply__contrast(gray, image->width, image->height, 1.1f);
 
   floyd__steinberg_dither(gray, image->width, image->height);
 
   int vscale = (int)(scale / aspect_ratio);
-
-  if (vscale < 1)
-    vscale = 1;
+  vscale = vscale < 1 ? 1 : vscale;
 
   int use_color = 1;
 
   int out_rows = (image->height + vscale - 1) / vscale;
   int out_cols = (image->width + scale - 1) / scale;
 
-  int num_threads = 1;
-#ifdef _SC_NPROCESSORS_ONLN
-  long cpus = sysconf(_SC_NPROCESSORS_ONLN);
-  if (cpus > 1)
-    num_threads = (int)cpus;
-#endif
-  wprintf(L"Using %d thread(s)\n", num_threads);
-
   wchar_t **output = (wchar_t **)PG_MALLOC(out_rows * sizeof(wchar_t *));
-  if (!output) {
-    wprintf(L"Error allocate memory for output.\n");
-
-    PG_FREE(gray);
-
-    stbi_image_free(image->data);
-
-    PG_FREE(image);
-
-    return;
-  }
-
   memset(output, 0, out_rows * sizeof(wchar_t *));
 
+  int num_threads = sysconf(_SC_NPROCESSORS_ONLN);
   pthread_t *threads = (pthread_t *)PG_MALLOC(num_threads * sizeof(pthread_t));
   ThreadData *thread_data =
       (ThreadData *)PG_MALLOC(num_threads * sizeof(ThreadData));
-  if (!threads || !thread_data) {
-    fwprintf(stderr, L"Error allocate memory for threads.\n");
 
-    PG_FREE(output);
-    PG_FREE(gray);
-
-    stbi_image_free(image->data);
-
-    PG_FREE(image);
-
-    return;
-  }
+  wprintf(L"Using %d thread(s)\n", num_threads);
 
   int rows_per_thread = out_rows / num_threads;
   int extra_rows = out_rows % num_threads;
   int current_row = 0;
 
   for (int i = 0; i < num_threads; i++) {
-    int start = current_row;
-    int add = (i < extra_rows) ? 1 : 0;
-    int end = start + rows_per_thread + add;
-
-    thread_data[i].start_row = start;
-    thread_data[i].end_row = end;
+    thread_data[i].start_row = current_row;
+    thread_data[i].end_row = current_row + rows_per_thread + (i < extra_rows);
     thread_data[i].out_cols = out_cols;
     thread_data[i].width = image->width;
     thread_data[i].height = image->height;
@@ -222,7 +184,7 @@ PGDEF void convert_image_to_ascii(const char *filename, int scale,
     thread_data[i].image = image->data;
     thread_data[i].gray = gray;
     thread_data[i].out = output;
-    current_row = end;
+    current_row = thread_data[i].end_row;
 
     if (pthread_create(&threads[i], NULL, process__rows, &thread_data[i]) != 0)
       fwprintf(stderr, L"Error create thread %d\n", i);
@@ -249,8 +211,7 @@ PGDEF void convert_image_to_ascii(const char *filename, int scale,
   PG_FREE(image);
 }
 
-PGDEF void apply__contrast(unsigned char *gray, int width, int height,
-                           float contrast) {
+PGDEF void apply__contrast(pgu8 *gray, int width, int height, float contrast) {
   int size = width * height;
   for (int i = 0; i < size; i++) {
     float val = gray[i];
@@ -260,11 +221,11 @@ PGDEF void apply__contrast(unsigned char *gray, int width, int height,
       val = 0;
     if (val > 255)
       val = 255;
-    gray[i] = (unsigned char)val;
+    gray[i] = (pgu8)val;
   }
 }
 
-PGDEF void floyd__steinberg_dither(unsigned char *gray, int width, int height) {
+PGDEF void floyd__steinberg_dither(pgu8 *gray, int width, int height) {
   for (int y = 0; y < height; y++) {
     for (int x = 0; x < width; x++) {
       int idx = y * width + x;
@@ -272,20 +233,20 @@ PGDEF void floyd__steinberg_dither(unsigned char *gray, int width, int height) {
 
       int level = (old_pixel * (ASCII_CHARS_LEN - 1) + 127) / 255;
       int new_pixel = level * 255 / (ASCII_CHARS_LEN - 1);
-      gray[idx] = (unsigned char)new_pixel;
+      gray[idx] = (pgu8)new_pixel;
       float error = old_pixel - new_pixel;
 
       if (x + 1 < width)
-        gray[y * width + (x + 1)] = (unsigned char)fmin(
+        gray[y * width + (x + 1)] = (pgu8)fmin(
             255, fmax(0, gray[y * width + (x + 1)] + error * 7 / 16));
       if (y + 1 < height) {
         if (x > 0)
-          gray[y + 1 * width + (x - 1)] = (unsigned char)fmin(
+          gray[y + 1 * width + (x - 1)] = (pgu8)fmin(
               255, fmax(0, gray[(y + 1) * width + (x - 1)] + error * 3 / 16));
-        gray[(y + 1) * width + x] = (unsigned char)fmin(
+        gray[(y + 1) * width + x] = (pgu8)fmin(
             255, fmax(0, gray[(y + 1) * width + x] + error * 5 / 16));
         if (x + 1 < width)
-          gray[(y + 1) * width + (x + 1)] = (unsigned char)fmin(
+          gray[(y + 1) * width + (x + 1)] = (pgu8)fmin(
               255, fmax(0, gray[(y + 1) * width + (x + 1)] + error * 1 / 16));
       }
     }
@@ -300,11 +261,8 @@ PGDEF void *process__rows(void *arg) {
     if (y >= data->height)
       break;
 
-    int buffer_size;
-    if (data->use_color)
-      buffer_size = data->out_cols * 24 + 1;
-    else
-      buffer_size = data->out_cols + 1;
+    int buffer_size =
+        data->use_color < 1 ? data->out_cols + 1 : data->out_cols * 24 + 1;
 
     wchar_t *line = (wchar_t *)PG_MALLOC(buffer_size * sizeof(wchar_t));
     if (!line) {
@@ -317,15 +275,15 @@ PGDEF void *process__rows(void *arg) {
 
     for (int x = 0; x < data->width; x += data->scale) {
       int index = y * data->width + x;
-      unsigned char brightness = data->gray[index];
+      pgu8 brightness = data->gray[index];
       int ascii_index = (brightness * (ASCII_CHARS_LEN - 1)) / 255;
       char c = ASCII_CHARS[ascii_index];
 
       if (data->use_color) {
         int idx_color = (y * data->width + x) * 3;
-        unsigned char r = data->image[idx_color];
-        unsigned char g = data->image[idx_color + 1];
-        unsigned char b = data->image[idx_color + 2];
+        pgu8 r = data->image[idx_color];
+        pgu8 g = data->image[idx_color + 1];
+        pgu8 b = data->image[idx_color + 2];
 
         int n = swprintf(line + pos, buffer_size - pos,
                          L"\033[38;2;%d;%d;%dm%c\033[0m", r, g, b, c);
@@ -343,7 +301,7 @@ PGDEF void *process__rows(void *arg) {
   return NULL;
 }
 
-PGDEF const pgu8 pg_version() { return PG_VERSION; }
+PGDEF const pgu32 pg_version() { return PG_VERSION; }
 
 #ifdef __cplusplus
 }
